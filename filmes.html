@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerenciador de Filmes Magnet</title>
+    <!-- Inclui o Tailwind CSS para estilização fácil e responsiva -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Define a fonte Inter para todo o corpo do documento */
+        body {
+            font-family: 'Inter', sans-serif;
+            @apply bg-gray-100 text-gray-800; /* Aplica estilos de fundo e texto do Tailwind */
+        }
+        /* Estilo para a caixa de mensagem modal (para informações e erros) */
+        .message-modal {
+            @apply fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50;
+            display: none; /* Esconde por padrão */
+        }
+        .message-modal-content {
+            @apply bg-white p-6 rounded-lg shadow-xl max-w-sm w-full text-center;
+        }
+        .message-modal-content button {
+            @apply mt-4 px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-300;
+        }
+        /* Estilo para o modal de confirmação */
+        .confirm-modal {
+            @apply fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50;
+            display: none; /* Esconde por padrão */
+        }
+        .confirm-modal-content {
+            @apply bg-white p-6 rounded-lg shadow-xl max-w-sm w-full text-center;
+        }
+        .confirm-modal-content button {
+            @apply mt-4 px-6 py-2 rounded-md transition-colors duration-300 font-semibold;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-6 lg:p-8">
+
+    <!-- Container principal do aplicativo -->
+    <div class="max-w-4xl mx-auto bg-white p-6 sm:p-8 rounded-xl shadow-lg">
+        <h1 class="text-3xl sm:text-4xl font-extrabold text-center text-indigo-700 mb-8">
+            Gerenciador de Filmes Magnet
+        </h1>
+
+        <!-- Exibição do ID do Usuário para depuração -->
+        <div id="userIdDisplay" class="text-center text-sm text-gray-600 mb-4 p-2 bg-gray-50 rounded-md hidden">
+            ID do Usuário: <span id="currentUserId">N/A</span>
+        </div>
+
+        <!-- Seção para pesquisa de filmes no TMDb -->
+        <div class="mb-8 p-6 bg-purple-50 rounded-lg shadow-inner">
+            <h2 class="text-2xl font-bold text-purple-700 mb-4">Pesquisar Filmes (TMDb)</h2>
+            <p class="text-sm text-gray-600 mb-4">
+                Agora você pode pesquisar filmes usando o TMDb.
+            </p>
+            <div class="flex flex-col sm:flex-row gap-4 mb-4">
+                <input type="text" id="tmdbSearchInput" placeholder="Pesquisar por nome do filme..."
+                       class="flex-grow p-3 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500 shadow-sm">
+                <button id="tmdbSearchBtn"
+                        class="px-6 py-3 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors duration-300 font-semibold shadow-md">
+                    Pesquisar
+                </button>
+            </div>
+            <div id="tmdbSearchResults" class="bg-white p-4 rounded-md shadow-inner max-h-60 overflow-y-auto hidden">
+                <!-- Resultados da pesquisa TMDb serão carregados aqui -->
+                <p class="text-center text-gray-500" id="tmdbNoResultsMessage">Nenhum resultado encontrado.</p>
+            </div>
+        </div>
+
+        <!-- Formulário para adicionar novos filmes -->
+        <div class="mb-8 p-6 bg-indigo-50 rounded-lg shadow-inner">
+            <h2 class="text-2xl font-bold text-indigo-600 mb-4">Adicionar Novo Filme</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label for="movieName" class="block text-sm font-medium text-gray-700 mb-1">Nome do Filme</label>
+                    <input type="text" id="movieName" placeholder="Ex: O Senhor dos Anéis"
+                           class="w-full p-3 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 shadow-sm">
+                </div>
+                <div>
+                    <label for="magnetLink" class="block text-sm font-medium text-gray-700 mb-1">Link Magnet</label>
+                    <input type="url" id="magnetLink" placeholder="magnet:?xt=urn:btih:..."
+                           class="w-full p-3 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 shadow-sm">
+                </div>
+            </div>
+            <button id="addMovieBtn"
+                    class="w-full mt-6 bg-indigo-600 text-white py-3 rounded-md hover:bg-indigo-700 transition-colors duration-300 font-semibold shadow-md">
+                Adicionar Filme
+            </button>
+        </div>
+
+        <!-- Seção para listar os filmes -->
+        <div class="mb-8">
+            <h2 class="text-2xl font-bold text-indigo-600 mb-4">Meus Filmes</h2>
+            <div id="movieList" class="space-y-4">
+                <!-- Filmes serão carregados aqui via JavaScript -->
+                <p class="text-center text-gray-500" id="loadingMessage">Carregando filmes...</p>
+                <p class="text-center text-gray-500 hidden" id="noMoviesMessage">Nenhum filme adicionado ainda.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para mensagens de erro/sucesso -->
+    <div id="messageModal" class="message-modal">
+        <div class="message-modal-content">
+            <p id="modalMessage" class="text-lg font-semibold mb-4"></p>
+            <button id="closeModalBtn">OK</button>
+        </div>
+    </div>
+
+    <!-- Modal para confirmação de exclusão -->
+    <div id="confirmModal" class="confirm-modal">
+        <div class="confirm-modal-content">
+            <p id="confirmMessage" class="text-lg font-semibold mb-4"></p>
+            <div class="flex justify-center gap-4">
+                <button id="confirmYesBtn" class="px-6 py-2 bg-red-600 text-white hover:bg-red-700 shadow-md">Sim</button>
+                <button id="confirmNoBtn" class="px-6 py-2 bg-gray-300 text-gray-800 hover:bg-gray-400 shadow-md">Não</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script de inicialização do Firebase e lógica do aplicativo -->
+    <script type="module">
+        // Importa os módulos necessários do Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Variáveis globais fornecidas pelo ambiente Canvas
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Inicializa o Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        let userId = null; // Variável para armazenar o ID do usuário
+
+        // Referências aos elementos do DOM
+        const movieNameInput = document.getElementById('movieName');
+        const magnetLinkInput = document.getElementById('magnetLink');
+        const addMovieBtn = document.getElementById('addMovieBtn');
+        const movieListDiv = document.getElementById('movieList');
+        const loadingMessage = document.getElementById('loadingMessage');
+        const noMoviesMessage = document.getElementById('noMoviesMessage');
+
+        // Referências para o modal de mensagem (informação/erro)
+        const messageModal = document.getElementById('messageModal');
+        const modalMessage = document.getElementById('modalMessage');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+
+        // Referências para o modal de confirmação
+        const confirmModal = document.getElementById('confirmModal');
+        const confirmMessage = document.getElementById('confirmMessage');
+        const confirmYesBtn = document.getElementById('confirmYesBtn');
+        const confirmNoBtn = document.getElementById('confirmNoBtn');
+
+        let confirmCallback = null; // Callback para o modal de confirmação
+
+        // Referências adicionais para elementos do DOM TMDb
+        const tmdbSearchInput = document.getElementById('tmdbSearchInput');
+        const tmdbSearchBtn = document.getElementById('tmdbSearchBtn');
+        const tmdbSearchResultsDiv = document.getElementById('tmdbSearchResults');
+        const tmdbNoResultsMessage = document.getElementById('tmdbNoResultsMessage');
+
+        // Referências para exibição do ID do Usuário
+        const userIdDisplay = document.getElementById('userIdDisplay');
+        const currentUserIdSpan = document.getElementById('currentUserId');
+
+        // Sua chave de API do TMDb. Obtenha uma em themoviedb.org
+        const TMDB_API_KEY = '6d0edef9aa6ad31de0b398ac01a89d4d'; // Sua chave de API do TMDb foi integrada aqui!
+
+        /**
+         * Exibe uma mensagem em um modal personalizado.
+         * @param {string} message - A mensagem a ser exibida.
+         */
+        function showMessageModal(message) {
+            modalMessage.textContent = message;
+            messageModal.style.display = 'flex';
+            console.log("Modal de Mensagem: ", message); // Log para depuração
+        }
+
+        // Fecha o modal de mensagem ao clicar no botão OK
+        closeModalBtn.addEventListener('click', () => {
+            messageModal.style.display = 'none';
+        });
+
+        /**
+         * Exibe um modal de confirmação.
+         * @param {string} message - A mensagem de confirmação.
+         * @param {function} onConfirm - Callback a ser executado se o usuário confirmar (true/false).
+         */
+        function showConfirmModal(message, onConfirm) {
+            confirmMessage.textContent = message;
+            confirmCallback = onConfirm;
+            confirmModal.style.display = 'flex';
+        }
+
+        confirmYesBtn.addEventListener('click', () => {
+            confirmModal.style.display = 'none';
+            if (confirmCallback) {
+                confirmCallback(true);
+            }
+        });
+
+        confirmNoBtn.addEventListener('click', () => {
+            confirmModal.style.display = 'none';
+            if (confirmCallback) {
+                confirmCallback(false);
+            }
+        });
+
+        /**
+         * Autentica o usuário com um token personalizado ou anonimamente.
+         */
+        async function authenticateUser() {
+            try {
+                if (initialAuthToken) {
+                    console.log("Tentando autenticar com token personalizado...");
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    console.log("Tentando autenticar anonimamente...");
+                    await signInAnonymously(auth);
+                }
+                console.log("Autenticação Firebase bem-sucedida.");
+            } catch (error) {
+                console.error("Erro na autenticação Firebase:", error);
+                showMessageModal(`Erro ao autenticar com o Firebase: ${error.message}.`);
+            }
+        }
+
+        // Observa o estado da autenticação
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                userId = user.uid;
+                currentUserIdSpan.textContent = userId; // Exibe o ID do usuário
+                userIdDisplay.classList.remove('hidden'); // Mostra a caixa do ID
+                console.log("Usuário autenticado:", userId);
+                // Inicia o carregamento dos filmes apenas após a autenticação
+                setupRealtimeMovieListener();
+                loadingMessage.classList.add('hidden'); // Esconde a mensagem de carregamento
+            } else {
+                userId = null;
+                currentUserIdSpan.textContent = 'N/A';
+                userIdDisplay.classList.add('hidden'); // Esconde a caixa do ID
+                console.log("Nenhum usuário autenticado, autenticando anonimamente...");
+                authenticateUser(); // Tenta autenticar se não houver usuário
+                loadingMessage.classList.remove('hidden'); // Mostra a mensagem de carregamento enquanto autentica
+            }
+        });
+
+        /**
+         * Adiciona um novo filme ao Firestore.
+         */
+        addMovieBtn.addEventListener('click', async () => {
+            console.log("Botão 'Adicionar Filme' clicado.");
+            const movieName = movieNameInput.value.trim();
+            const magnetLink = magnetLinkInput.value.trim();
+
+            // Validação de entrada
+            if (!movieName || !magnetLink) {
+                showMessageModal("Por favor, preencha o nome do filme e o link magnet.");
+                return;
+            }
+            if (!magnetLink.startsWith('magnet:?')) {
+                showMessageModal("O link magnet deve começar com 'magnet:?'.");
+                return;
+            }
+
+            if (!userId) {
+                showMessageModal("Autenticação ainda não pronta. Por favor, tente novamente em breve.");
+                console.warn("Tentativa de adicionar filme sem userId. Autenticação pendente.");
+                return;
+            }
+
+            try {
+                // Adiciona o documento ao Firestore
+                console.log("Adicionando filme ao Firestore:", { name: movieName, magnet: magnetLink });
+                const docRef = await addDoc(collection(db, `artifacts/${appId}/public/data/movies`), {
+                    name: movieName,
+                    magnet: magnetLink,
+                    createdAt: new Date(),
+                    addedBy: userId
+                });
+                console.log("Filme adicionado com ID:", docRef.id);
+                showMessageModal("Filme adicionado com sucesso!");
+                // Limpa os campos após adicionar
+                movieNameInput.value = '';
+                magnetLinkInput.value = '';
+            } catch (e) {
+                console.error("Erro ao adicionar documento ao Firestore: ", e);
+                showMessageModal(`Erro ao adicionar o filme: ${e.message}. Tente novamente.`);
+            }
+        });
+
+        /**
+         * Exclui um filme do Firestore.
+         * @param {string} movieId - O ID do documento do filme a ser excluído.
+         */
+        async function deleteMovie(movieId) {
+            showConfirmModal("Tem certeza que deseja excluir este filme?", async (confirmed) => {
+                if (confirmed) {
+                    try {
+                        console.log("Excluindo filme com ID:", movieId);
+                        await deleteDoc(doc(db, `artifacts/${appId}/public/data/movies`, movieId));
+                        console.log("Filme excluído com sucesso!");
+                        showMessageModal("Filme excluído com sucesso!");
+                    } catch (error) {
+                        console.error("Erro ao excluir o filme:", error);
+                        showMessageModal(`Erro ao excluir o filme: ${error.message}. Tente novamente.`);
+                    }
+                }
+            });
+        }
+
+        /**
+         * Configura o listener em tempo real para os filmes no Firestore.
+         */
+        function setupRealtimeMovieListener() {
+            if (!userId) {
+                console.warn("setupRealtimeMovieListener chamado sem userId. O listener não será anexado.");
+                return;
+            }
+            // Cria uma query para a coleção de filmes
+            const q = query(collection(db, `artifacts/${appId}/public/data/movies`));
+            console.log("Configurando listener em tempo real para filmes.");
+
+            // Configura o listener em tempo real
+            onSnapshot(q, (snapshot) => {
+                console.log("Dados de filmes recebidos do Firestore.");
+                const movies = [];
+                snapshot.forEach((doc) => {
+                    movies.push({ id: doc.id, ...doc.data() });
+                });
+
+                // Ordena os filmes por data de criação (mais recentes primeiro)
+                movies.sort((a, b) => b.createdAt.toDate() - a.createdAt.toDate());
+
+                renderMovies(movies); // Renderiza a lista de filmes
+            }, (error) => {
+                console.error("Erro ao buscar documentos do Firestore (onSnapshot):", error);
+                showMessageModal(`Erro ao carregar os filmes: ${error.message}. Verifique sua conexão.`);
+            });
+        }
+
+        /**
+         * Renderiza a lista de filmes na interface do usuário.
+         * @param {Array<Object>} movies - Um array de objetos de filmes.
+         */
+        function renderMovies(movies) {
+            movieListDiv.innerHTML = ''; // Limpa a lista atual
+
+            if (movies.length === 0) {
+                noMoviesMessage.classList.remove('hidden'); // Mostra a mensagem de "nenhum filme"
+            } else {
+                noMoviesMessage.classList.add('hidden'); // Esconde a mensagem de "nenhum filme"
+                movies.forEach(movie => {
+                    const movieCard = document.createElement('div');
+                    movieCard.className = 'bg-white p-4 rounded-lg shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4';
+                    movieCard.innerHTML = `
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">${movie.name}</h3>
+                            <p class="text-sm text-gray-500 truncate" title="${movie.magnet}">${movie.magnet}</p>
+                            <p class="text-xs text-gray-400">Adicionado por: ${movie.addedBy ? movie.addedBy.substring(0, 8) + '...' : 'N/A'}</p>
+                        </div>
+                        <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                            <a href="${movie.magnet}" target="_blank" rel="noopener noreferrer"
+                               class="w-full sm:w-auto px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors duration-300 text-center text-sm font-medium shadow-sm">
+                                Ver Filme
+                            </a>
+                            <button data-id="${movie.id}"
+                                    class="delete-btn w-full sm:w-auto px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors duration-300 text-center text-sm font-medium shadow-sm">
+                                Excluir
+                            </button>
+                        </div>
+                    `;
+                    movieListDiv.appendChild(movieCard);
+                });
+
+                // Adiciona event listeners aos botões de exclusão
+                document.querySelectorAll('.delete-btn').forEach(button => {
+                    button.addEventListener('click', (event) => {
+                        const movieId = event.target.dataset.id;
+                        deleteMovie(movieId);
+                    });
+                });
+            }
+        }
+
+        /**
+         * Pesquisa filmes no TMDb.
+         * @param {string} query - O termo de pesquisa do filme.
+         */
+        async function searchMoviesFromTMDb(query) {
+            console.log("Iniciando pesquisa TMDb para:", query);
+            if (!TMDB_API_KEY || TMDB_API_KEY === 'SUA_CHAVE_API_TMDB_AQUI') {
+                showMessageModal("Por favor, insira sua chave de API do TMDb no código para usar esta função.");
+                console.error("TMDB_API_KEY não configurada corretamente.");
+                return;
+            }
+            if (!query) {
+                showMessageModal("Por favor, digite um nome de filme para pesquisar no TMDb.");
+                return;
+            }
+
+            const apiUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}&language=pt-BR`;
+            tmdbSearchResultsDiv.innerHTML = '<p class="text-center text-gray-500">Buscando...</p>';
+            tmdbSearchResultsDiv.classList.remove('hidden');
+            console.log("Chamando TMDb API com URL:", apiUrl);
+
+            try {
+                const response = await fetch(apiUrl);
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error(`Erro HTTP do TMDb! status: ${response.status}, resposta: ${errorText}`);
+                    throw new Error(`Erro HTTP! status: ${response.status} - ${errorText}`);
+                }
+                const data = await response.json();
+                console.log("Dados recebidos do TMDb:", data);
+                renderTMDBSearchResults(data.results);
+            } catch (error) {
+                console.error("Erro ao buscar filmes do TMDb:", error);
+                tmdbSearchResultsDiv.innerHTML = '<p class="text-center text-red-500">Erro ao carregar resultados. Tente novamente.</p>';
+                showMessageModal(`Erro ao pesquisar filmes no TMDb: ${error.message}. Verifique a chave da API e sua conexão.`);
+            }
+        }
+
+        /**
+         * Renderiza os resultados da pesquisa do TMDb.
+         * @param {Array<Object>} results - Array de objetos de filmes do TMDb.
+         */
+        function renderTMDBSearchResults(results) {
+            tmdbSearchResultsDiv.innerHTML = ''; // Limpa os resultados anteriores
+            if (results && results.length > 0) {
+                tmdbNoResultsMessage.classList.add('hidden');
+                results.forEach(movie => {
+                    const movieResultItem = document.createElement('div');
+                    movieResultItem.className = 'p-3 hover:bg-gray-100 cursor-pointer rounded-md transition-colors duration-200';
+                    movieResultItem.innerHTML = `
+                        <h4 class="font-semibold text-gray-800">${movie.title} (${movie.release_date ? movie.release_date.substring(0, 4) : 'N/A'})</h4>
+                        <p class="text-sm text-gray-600">${movie.overview ? movie.overview.substring(0, 100) + '...' : 'Sem descrição.'}</p>
+                    `;
+                    movieResultItem.addEventListener('click', () => {
+                        movieNameInput.value = movie.title; // Preenche o campo de nome do filme
+                        tmdbSearchResultsDiv.classList.add('hidden'); // Esconde os resultados da pesquisa
+                        tmdbSearchInput.value = ''; // Limpa o campo de pesquisa do TMDb
+                        console.log("Filme selecionado do TMDb:", movie.title);
+                    });
+                    tmdbSearchResultsDiv.appendChild(movieResultItem);
+                });
+            } else {
+                tmdbNoResultsMessage.classList.remove('hidden'); // Garante que a mensagem esteja visível
+                tmdbSearchResultsDiv.appendChild(tmdbNoResultsMessage);
+                console.log("Nenhum resultado encontrado do TMDb.");
+            }
+        }
+
+        // Event listener para o botão de pesquisa do TMDb
+        tmdbSearchBtn.addEventListener('click', () => {
+            const query = tmdbSearchInput.value.trim();
+            searchMoviesFromTMDb(query);
+        });
+
+        // Opcional: Pesquisar ao pressionar Enter no campo de pesquisa do TMDb
+        tmdbSearchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                tmdbSearchBtn.click();
+            }
+        });
+
+        // Inicia o processo de autenticação e carregamento de filmes
+        // A chamada a authenticateUser() é feita uma vez no onAuthStateChanged para garantir que o userId seja definido
+        // antes de tentar acessar o Firestore.
+    </script>
+</body>
+</html>
